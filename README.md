@@ -1,331 +1,570 @@
-# OpenClash Config Builder
-
-🤖 **自动化 OpenClash 覆写配置生成器**
-
-从 [HenryChiao/mihomo_yamls](https://github.com/HenryChiao/mihomo_yamls) 提取配置，精简处理后生成 OpenClash .conf 覆写文件，并根据 proxy-provider 数量动态生成环境变量。
-
-[![Build](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/build.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO/actions)
-[![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-
----
-
-## ✨ 核心特性
-
-- 🔄 **自动同步**: 每日从上游自动拉取最新配置
-- ✂️ **智能精简**: 只保留 `proxy-providers`, `proxy-groups`, `rule-providers`, `rules` 和锚点
-- 🎯 **动态变量**: 根据 provider 数量自动生成对应的环境变量 (`EN_KEY`, `EN_KEY1`, `EN_KEY2`, ...)
-- 📦 **多场景支持**: 主路由、旁路由、Smart 智能模式
-- 🤖 **全自动化**: GitHub Actions 每日构建，无需手动操作
-
----
-
-## 🎯 工作原理
-
-```
-HenryChiao/mihomo_yamls (上游)
-         ↓
-    [同步 YAML 文件]
-         ↓
-    [精简处理]
-    - 删除: port, external-controller, dns, tun 等非必要配置
-    - 保留: proxy-providers, proxy-groups, rule-providers, rules, 锚点
-         ↓
-    [分析 Provider 数量]
-    - 1 个 provider → EN_KEY
-    - 2 个 providers → EN_KEY1, EN_KEY2
-    - N 个 providers → EN_KEY1...EN_KEYN
-         ↓
-    [生成 .conf 文件]
-    - 主路由版
-    - 旁路由版  
-    - Smart 版
-         ↓
-    [发布 Release]
-```
-
----
-
-## 📂 项目结构
-
-```
-clash-config-builder/
-├── src/
-│   ├── yaml_stripper.py      # YAML 精简处理器
-│   └── conf_generator.py     # .conf 文件生成器
-├── templates/
-│   ├── main.conf.j2          # 主路由模板
-│   ├── bypass.conf.j2        # 旁路由模板
-│   └── smart.conf.j2         # Smart 模式模板
-├── processed_configs/         # 精简后的 YAML 文件
-├── output/                    # 生成的 .conf 文件
-├── .github/workflows/
-│   └── build.yml             # GitHub Actions 工作流
-└── README.md
-```
-
----
-
-## 🚀 使用方法
-
-### 方式一：直接使用生成的配置 (推荐)
-
-1. **前往 [Releases](https://github.com/YOUR_USERNAME/YOUR_REPO/releases) 页面**
-
-2. **选择最新的 Release**，找到你需要的 .conf 文件
-
-3. **复制 Raw 链接**，例如：
-   ```
-   https://github.com/YOUR_USERNAME/YOUR_REPO/releases/download/v2026-02-02/配置名.conf
-   ```
-
-4. **在 OpenClash 中添加覆写模块**：
-   - 文件名：自定义
-   - 类型：`http`
-   - 订阅链接：上面复制的 URL
-
-5. **配置环境变量**（根据文件内的说明）：
-   
-   **单订阅配置**（1 个 provider）:
-   ```
-   EN_KEY=你的机场订阅链接
-   ```
-   
-   **多订阅配置**（多个 providers）:
-   ```
-   EN_KEY1=订阅链接1;EN_KEY2=订阅链接2;EN_KEY3=订阅链接3
-   ```
-   
-   **旁路由**（额外需要）:
-   ```
-   EN_DNS=114.114.114.114
-   ```
-
-6. **保存并重启 OpenClash**
-
-### 方式二：自己构建
-
-```bash
-# 克隆项目
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd clash-config-builder
-
-# 安装依赖
-pip install PyYAML Jinja2
-
-# 1. 同步上游配置
-git clone https://github.com/HenryChiao/mihomo_yamls.git upstream
-cp upstream/General_Config/*.yaml raw_configs/
-
-# 2. 精简 YAML 文件
-python src/yaml_stripper.py raw_configs processed_configs
-
-# 3. 生成 .conf 文件
-python src/conf_generator.py processed_configs output --templates templates
-
-# 4. 查看生成的文件
-ls output/
-```
-
----
-
-## 📋 配置文件说明
-
-### 文件命名规则
-
-| 文件名 | 适用场景 | Provider 变量 |
-|--------|---------|--------------|
-| `配置名.conf` | 主路由标准 | 自动生成 |
-| `配置名-bypass_router.conf` | 旁路由 | 自动生成 + EN_DNS |
-| `配置名-smart.conf` | Smart 智能模式 | 自动生成 |
-
-### Provider 变量说明
-
-配置文件会自动根据 `proxy-providers` 数量生成环境变量：
-
-```python
-1 个 provider  → EN_KEY
-2 个 providers → EN_KEY1, EN_KEY2
-3 个 providers → EN_KEY1, EN_KEY2, EN_KEY3
-...
-```
-
-**示例**：
-
-如果配置文件中有 3 个 proxy-providers:
-```yaml
-proxy-providers:
-  provider1:
-    ...
-  provider2:
-    ...
-  provider3:
-    ...
-```
-
-那么环境变量应该设置为:
-```
-EN_KEY1=订阅链接1;EN_KEY2=订阅链接2;EN_KEY3=订阅链接3
-```
-
----
-
-## 🔧 精简规则
-
-### 保留的内容
-
-✅ `proxy-providers` - 代理提供者  
-✅ `proxy-groups` - 策略组  
-✅ `rule-providers` - 规则提供者  
-✅ `rules` - 规则列表  
-✅ **锚点** (YAML anchors) - 如 `&anchor_name`
-
-### 删除的内容
-
-❌ `port`, `socks-port`, `mixed-port` - 端口配置  
-❌ `external-controller` - 外部控制器  
-❌ `dns` - DNS 配置（由 OpenClash 管理）  
-❌ `tun` - TUN 配置（由 OpenClash 管理）  
-❌ `allow-lan`, `mode`, `log-level` 等基础配置  
-❌ 其他非核心配置
-
----
-
-## 🤖 GitHub Actions 自动化
-
-项目包含完整的 CI/CD 流程：
-
-### 触发条件
-
-- ⏰ **定时触发**: 每天凌晨 2 点 (UTC)
-- 🖱️ **手动触发**: 在 Actions 页面点击 "Run workflow"
-- 📝 **代码推送**: 推送到 `main` 分支时
-
-### 工作流程
-
-1. 克隆上游仓库 `HenryChiao/mihomo_yamls`
-2. 提取所有 YAML 配置文件
-3. 精简处理（只保留核心部分）
-4. 生成 .conf 文件（主路由/旁路由/Smart）
-5. 创建 Release 并上传文件
-6. 提交更改到仓库
-
----
-
-## 📊 支持的上游配置
-
-目前自动同步以下目录：
-
-- ✅ `General_Config/` - 通用配置
-- ✅ `Smart_Mode/` - Smart 模式配置
-
----
-
-## 🛠️ 开发说明
-
-### Python 模块
-
-#### yaml_stripper.py
-
-负责精简 YAML 文件：
-
-```python
-from src.yaml_stripper import YAMLStripper
-
-stripper = YAMLStripper()
-config = stripper.strip_yaml(Path('input.yaml'))
-stripper.save_stripped_yaml(config, Path('output.yaml'))
-```
-
-#### conf_generator.py
-
-负责生成 .conf 文件：
-
-```python
-from src.conf_generator import ConfGenerator
-
-generator = ConfGenerator(Path('templates'))
-generator.generate_conf(
-    yaml_path=Path('config.yaml'),
-    output_path=Path('output.conf'),
-    config_type='main_router'
-)
-```
-
-### 添加新模板
-
-1. 在 `templates/` 目录创建新的 `.j2` 文件
-2. 使用 Jinja2 语法编写模板
-3. 在 `conf_generator.py` 中添加对应的配置类型
-
----
-
-## 📝 示例配置
-
-### 单订阅示例
-
-```ini
-[General]
-CONFIG_FILE = /etc/openclash/config/MyConfig.yaml
-...
-
-[Overwrite]
-ruby_map_edit "$CONFIG_FILE" "['proxy-providers']" "provider" "['url']" "$EN_KEY"
-```
-
-**环境变量**:
-```
-EN_KEY=https://example.com/sub
-```
-
-### 多订阅示例
-
-```ini
-[General]
-CONFIG_FILE = /etc/openclash/config/MultiSub.yaml
-...
-
-[Overwrite]
-ruby_edit "$CONFIG_FILE" "['proxy-providers']['provider1']['url']" "$EN_KEY1"
-ruby_edit "$CONFIG_FILE" "['proxy-providers']['provider2']['url']" "$EN_KEY2"
-```
-
-**环境变量**:
-```
-EN_KEY1=https://example.com/sub1;EN_KEY2=https://example.com/sub2
-```
-
----
-
-## ⚠️ 注意事项
-
-1. **环境变量必须正确设置**，否则订阅无法更新
-2. **旁路由用户**必须额外设置 `EN_DNS` 变量
-3. 精简后的 YAML 文件会自动下载到路由器的 `/etc/openclash/config/` 目录
-4. 所有配置默认启用 Smart 内核，如需 Meta 内核请手动修改
-5. 请确保 OpenClash 版本 ≥ v0.47.006
-
----
-
-## 🔗 相关链接
-
-- [OpenClash 项目](https://github.com/vernesong/OpenClash)
-- [HenryChiao/mihomo_yamls](https://github.com/HenryChiao/mihomo_yamls) - 上游配置源
-- [Mihomo 文档](https://wiki.metacubex.one/)
-
----
-
-## 📜 许可证
-
-本项目采用 GPL-3.0 许可证。详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 🙏 致谢
-
-- [HenryChiao](https://github.com/HenryChiao) - mihomo_yamls 项目作者
-- [vernesong](https://github.com/vernesong) - OpenClash 项目作者
-- 所有为开源社区贡献的开发者
-
----
-
-**如果这个项目对你有帮助，请给个 ⭐ Star！**
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClash Config Builder - 自动化覆写配置生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#6366f1',
+                        accent: '#06b6d4',
+                        dark: '#0f172a',
+                        'dark-light': '#1e293b',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                        'slide-up': 'slideUp 0.5s ease-out',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .code-block {
+            background: #1e293b;
+            border-radius: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .code-block::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #3b82f6, #06b6d4);
+        }
+        .tree-line {
+            border-left: 2px solid #334155;
+            padding-left: 1.5rem;
+            margin-left: 0.5rem;
+        }
+        .feature-card {
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-dark text-gray-100 font-sans antialiased selection:bg-primary selection:text-white">
+
+    <!-- Hero Section -->
+    <header class="relative min-h-screen flex items-center justify-center overflow-hidden">
+        <div class="absolute inset-0 bg-gradient-to-br from-dark via-dark-light to-dark opacity-90"></div>
+        <div class="absolute inset-0">
+            <div class="absolute top-20 left-10 w-72 h-72 bg-primary/20 rounded-full blur-3xl animate-pulse-slow"></div>
+            <div class="absolute bottom-20 right-10 w-96 h-96 bg-secondary/20 rounded-full blur-3xl animate-pulse-slow" style="animation-delay: 1s;"></div>
+        </div>
+
+        <div class="relative z-10 container mx-auto px-6 text-center">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8 animate-slide-up">
+                <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                <span class="text-sm text-gray-400">自动化构建系统运行中</span>
+            </div>
+
+            <h1 class="text-5xl md:text-7xl font-bold mb-6 animate-slide-up" style="animation-delay: 0.1s;">
+                <span class="gradient-text">OpenClash</span><br>
+                <span class="text-white">Config Builder</span>
+            </h1>
+
+            <p class="text-xl md:text-2xl text-gray-400 max-w-2xl mx-auto mb-12 animate-slide-up" style="animation-delay: 0.2s;">
+                智能提取 · 自动精简 · 动态生成<br>
+                <span class="text-sm md:text-base text-gray-500 mt-2 block">从上游 YAML 到 OpenClash 覆写配置的一站式解决方案</span>
+            </p>
+
+            <div class="flex flex-col md:flex-row gap-4 justify-center items-center animate-slide-up" style="animation-delay: 0.3s;">
+                <a href="#quick-start" class="px-8 py-4 bg-primary hover:bg-blue-600 text-white rounded-lg font-semibold transition-all flex items-center gap-2 group">
+                    <i class="fas fa-rocket group-hover:translate-x-1 transition-transform"></i>
+                    快速开始
+                </a>
+                <a href="https://github.com/YOUR_USERNAME/YOUR_REPO" target="_blank" class="px-8 py-4 glass hover:bg-white/10 text-white rounded-lg font-semibold transition-all flex items-center gap-2">
+                    <i class="fab fa-github"></i>
+                    查看源码
+                </a>
+            </div>
+
+            <div class="mt-16 flex justify-center gap-6 text-gray-500 animate-slide-up" style="animation-delay: 0.4s;">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-sync-alt text-primary"></i>
+                    <span>每日自动同步</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-code-branch text-secondary"></i>
+                    <span>动态变量生成</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-bolt text-accent"></i>
+                    <span>零配置部署</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce">
+            <i class="fas fa-chevron-down text-gray-600 text-2xl"></i>
+        </div>
+    </header>
+
+    <!-- Features Grid -->
+    <section class="py-20 bg-dark-light/30">
+        <div class="container mx-auto px-6">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">核心特性</h2>
+                <p class="text-gray-400">全自动化的配置管理流水线</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="feature-card glass p-6 rounded-xl">
+                    <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-4 text-blue-400">
+                        <i class="fas fa-sync-alt text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">自动同步上游</h3>
+                    <p class="text-gray-400 text-sm">每日定时从 HenryChiao/mihomo_yamls 拉取最新配置，保持规则集始终更新</p>
+                </div>
+
+                <div class="feature-card glass p-6 rounded-xl">
+                    <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-4 text-purple-400">
+                        <i class="fas fa-cut text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">智能精简</h3>
+                    <p class="text-gray-400 text-sm">自动删除 port、dns、tun 等 OpenClash 管理字段，仅保留核心代理和规则配置</p>
+                </div>
+
+                <div class="feature-card glass p-6 rounded-xl">
+                    <div class="w-12 h-12 bg-cyan-500/20 rounded-lg flex items-center justify-center mb-4 text-cyan-400">
+                        <i class="fas fa-variable text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">动态变量生成</h3>
+                    <p class="text-gray-400 text-sm">根据 proxy-provider 数量自动识别并生成 EN_KEY / EN_KEY1...N 环境变量要求</p>
+                </div>
+
+                <div class="feature-card glass p-6 rounded-xl">
+                    <div class="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center mb-4 text-green-400">
+                        <i class="fas fa-network-wired text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">三模式支持</h3>
+                    <p class="text-gray-400 text-sm">自动生成主路由、旁路由(+EN_DNS)、Smart 智能模式三种覆写配置</p>
+                </div>
+
+                <div class="feature-card glass p-6 rounded-xl">
+                    <div class="w-12 h-12 bg-orange-500/20 rounded-lg flex items-center justify-center mb-4 text-orange-400">
+                        <i class="fas fa-code text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">本地配置支持</h3>
+                    <p class="text-gray-400 text-sm">通过 cleaner_config/ 目录维护自定义配置，与外部配置一起处理</p>
+                </div>
+
+                <div class="feature-card glass p-6 rounded-xl">
+                    <div class="w-12 h-12 bg-pink-500/20 rounded-lg flex items-center justify-center mb-4 text-pink-400">
+                        <i class="fas fa-robot text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">零人工干预</h3>
+                    <p class="text-gray-400 text-sm">GitHub Actions 全自动构建，直接提交到仓库 overwrite/ 目录，可直接编辑</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Workflow Visualization -->
+    <section class="py-20">
+        <div class="container mx-auto px-6">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">工作流程</h2>
+                <p class="text-gray-400">从上游到成品的全自动化流程</p>
+            </div>
+
+            <div class="relative max-w-4xl mx-auto">
+                <div class="absolute left-1/2 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-cyan-500 -translate-x-1/2 hidden md:block"></div>
+
+                <div class="space-y-12">
+                    <div class="relative flex flex-col md:flex-row items-center gap-8">
+                        <div class="flex-1 text-right hidden md:block">
+                            <h3 class="text-xl font-semibold text-blue-400">1. 同步上游</h3>
+                            <p class="text-gray-400 mt-2">从 HenryChiao/mihomo_yamls 克隆 THEYAMLS 目录下的 General_Config 和 Smart_Mode</p>
+                        </div>
+                        <div class="w-16 h-16 rounded-full bg-dark-light border-2 border-blue-500 flex items-center justify-center z-10 shadow-lg shadow-blue-500/20">
+                            <i class="fas fa-download text-blue-400 text-xl"></i>
+                        </div>
+                        <div class="flex-1 md:hidden text-center">
+                            <h3 class="text-xl font-semibold text-blue-400">1. 同步上游</h3>
+                            <p class="text-gray-400 mt-2">获取最新 YAML 配置</p>
+                        </div>
+                        <div class="flex-1 hidden md:block"></div>
+                    </div>
+
+                    <div class="relative flex flex-col md:flex-row items-center gap-8">
+                        <div class="flex-1 hidden md:block"></div>
+                        <div class="w-16 h-16 rounded-full bg-dark-light border-2 border-purple-500 flex items-center justify-center z-10 shadow-lg shadow-purple-500/20">
+                            <i class="fas fa-filter text-purple-400 text-xl"></i>
+                        </div>
+                        <div class="flex-1 text-center md:text-left">
+                            <h3 class="text-xl font-semibold text-purple-400">2. 精简处理</h3>
+                            <p class="text-gray-400 mt-2">提取 proxy-providers, proxy-groups, rule-providers, rules 及锚点定义，删除 OpenClash 管理字段</p>
+                        </div>
+                    </div>
+
+                    <div class="relative flex flex-col md:flex-row items-center gap-8">
+                        <div class="flex-1 text-right hidden md:block">
+                            <h3 class="text-xl font-semibold text-cyan-400">3. 分析生成</h3>
+                            <p class="text-gray-400 mt-2">统计 Provider 数量，生成对应环境变量，渲染 Jinja2 模板</p>
+                        </div>
+                        <div class="w-16 h-16 rounded-full bg-dark-light border-2 border-cyan-500 flex items-center justify-center z-10 shadow-lg shadow-cyan-500/20">
+                            <i class="fas fa-cogs text-cyan-400 text-xl"></i>
+                        </div>
+                        <div class="flex-1 md:hidden text-center">
+                            <h3 class="text-xl font-semibold text-cyan-400">3. 分析生成</h3>
+                            <p class="text-gray-400 mt-2">生成 .conf 覆写文件</p>
+                        </div>
+                        <div class="flex-1 hidden md:block"></div>
+                    </div>
+
+                    <div class="relative flex flex-col md:flex-row items-center gap-8">
+                        <div class="flex-1 hidden md:block"></div>
+                        <div class="w-16 h-16 rounded-full bg-dark-light border-2 border-green-500 flex items-center justify-center z-10 shadow-lg shadow-green-500/20">
+                            <i class="fas fa-save text-green-400 text-xl"></i>
+                        </div>
+                        <div class="flex-1 text-center md:text-left">
+                            <h3 class="text-xl font-semibold text-green-400">4. 提交仓库</h3>
+                            <p class="text-gray-400 mt-2">自动提交到 overwrite/ 和 processed_configs/ 目录，可直接浏览和编辑</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Directory Structure -->
+    <section class="py-20 bg-dark-light/30">
+        <div class="container mx-auto px-6">
+            <div class="grid lg:grid-cols-2 gap-12 items-start">
+                <div>
+                    <h2 class="text-3xl font-bold mb-6">项目结构</h2>
+                    <p class="text-gray-400 mb-8">清晰的目录划分，自动化与手动配置分离</p>
+                    
+                    <div class="glass rounded-xl p-6 font-mono text-sm">
+                        <div class="text-gray-400 mb-2">your-repo/</div>
+                        <div class="tree-line space-y-1">
+                            <div class="flex items-center gap-2 text-yellow-400">
+                                <i class="fas fa-folder"></i>
+                                <span>.github/workflows/</span>
+                                <span class="text-gray-500 text-xs">CI配置</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-blue-400">
+                                <i class="fas fa-folder"></i>
+                                <span>src/</span>
+                                <span class="text-gray-500 text-xs">Python脚本</span>
+                            </div>
+                            <div class="pl-8 space-y-1 text-gray-300">
+                                <div><i class="fab fa-python text-blue-300 mr-2"></i>yaml_processor.py</div>
+                                <div><i class="fab fa-python text-blue-300 mr-2"></i>overwrite_generator.py</div>
+                            </div>
+                            <div class="flex items-center gap-2 text-purple-400">
+                                <i class="fas fa-folder"></i>
+                                <span>templates/</span>
+                                <span class="text-gray-500 text-xs">Jinja2模板</span>
+                            </div>
+                            <div class="pl-8 space-y-1 text-gray-300">
+                                <div><i class="fas fa-file-code text-gray-400 mr-2"></i>main.conf.j2</div>
+                                <div><i class="fas fa-file-code text-gray-400 mr-2"></i>bypass.conf.j2</div>
+                                <div><i class="fas fa-file-code text-gray-400 mr-2"></i>smart.conf.j2</div>
+                            </div>
+                            <div class="flex items-center gap-2 text-green-400">
+                                <i class="fas fa-folder"></i>
+                                <span>cleaner_config/</span>
+                                <span class="text-gray-500 text-xs">本地配置源</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-orange-400">
+                                <i class="fas fa-folder"></i>
+                                <span>processed_configs/</span>
+                                <span class="text-gray-500 text-xs">精简后的YAML</span>
+                            </div>
+                            <div class="pl-8 flex items-center gap-2 text-gray-300">
+                                <i class="fas fa-folder text-yellow-600"></i>
+                                <span>external/</span>
+                            </div>
+                            <div class="pl-8 flex items-center gap-2 text-gray-300">
+                                <i class="fas fa-folder text-yellow-600"></i>
+                                <span>local/</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-pink-400 font-semibold">
+                                <i class="fas fa-folder-open"></i>
+                                <span>overwrite/</span>
+                                <span class="text-gray-500 text-xs font-normal">生成的覆写文件</span>
+                            </div>
+                            <div class="pl-8 space-y-1 text-gray-300 text-xs">
+                                <div><i class="fas fa-file-alt text-gray-400 mr-2"></i>Overwrite-external-*.conf</div>
+                                <div><i class="fas fa-file-alt text-gray-400 mr-2"></i>Overwrite-local-*.conf</div>
+                                <div><i class="fas fa-info-circle text-blue-400 mr-2"></i>README.md</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="glass rounded-xl p-6 border-l-4 border-blue-500">
+                        <h4 class="font-semibold text-lg mb-2 flex items-center gap-2">
+                            <i class="fas fa-code text-blue-400"></i>
+                            外部配置 (External)
+                        </h4>
+                        <p class="text-gray-400 text-sm">自动从 HenryChiao/mihomo_yamls 同步，存放于 processed_configs/external/，每日更新</p>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-green-500">
+                        <h4 class="font-semibold text-lg mb-2 flex items-center gap-2">
+                            <i class="fas fa-home text-green-400"></i>
+                            本地配置 (Local)
+                        </h4>
+                        <p class="text-gray-400 text-sm">通过 cleaner_config/ 目录维护，适合自定义规则或私有配置，与外部配置隔离</p>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-pink-500">
+                        <h4 class="font-semibold text-lg mb-2 flex items-center gap-2">
+                            <i class="fas fa-magic text-pink-400"></i>
+                            覆写文件 (Overwrite)
+                        </h4>
+                        <p class="text-gray-400 text-sm">最终生成的 .conf 文件，按 主路由/旁路由/Smart 三种模式分别生成，可直接在 GitHub 上编辑</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Usage Guide -->
+    <section id="quick-start" class="py-20">
+        <div class="container mx-auto px-6 max-w-4xl">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold mb-4">使用方法</h2>
+                <p class="text-gray-400">三步完成覆写配置部署</p>
+            </div>
+
+            <div class="space-y-8">
+                <div class="glass rounded-xl p-8 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -mr-16 -mt-16"></div>
+                    <div class="relative z-10">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center font-bold text-lg">1</div>
+                            <h3 class="text-xl font-semibold">选择配置文件</h3>
+                        </div>
+                        <p class="text-gray-400 mb-4">进入仓库的 <code class="bg-dark-light px-2 py-1 rounded text-blue-400">overwrite/</code> 目录，根据文件名选择适合的配置：</p>
+                        <div class="grid md:grid-cols-3 gap-4 text-sm">
+                            <div class="bg-dark-light/50 p-4 rounded-lg border border-gray-700">
+                                <div class="font-semibold text-blue-400 mb-2">主路由模式</div>
+                                <div class="text-gray-500 text-xs">Overwrite-*-main.conf</div>
+                                <div class="mt-2 text-gray-400">标准 Url-test 模式，适合作为主路由</div>
+                            </div>
+                            <div class="bg-dark-light/50 p-4 rounded-lg border border-gray-700">
+                                <div class="font-semibold text-orange-400 mb-2">旁路由模式</div>
+                                <div class="text-gray-500 text-xs">Overwrite-*-bypass.conf</div>
+                                <div class="mt-2 text-gray-400">需额外设置 EN_DNS，适合旁路由</div>
+                            </div>
+                            <div class="bg-dark-light/50 p-4 rounded-lg border border-gray-700">
+                                <div class="font-semibold text-purple-400 mb-2">Smart 模式</div>
+                                <div class="text-gray-500 text-xs">Overwrite-*-smart.conf</div>
+                                <div class="mt-2 text-gray-400">自动选择最优节点，支持模型训练</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass rounded-xl p-8 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full -mr-16 -mt-16"></div>
+                    <div class="relative z-10">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center font-bold text-lg">2</div>
+                            <h3 class="text-xl font-semibold">配置环境变量</h3>
+                        </div>
+                        <p class="text-gray-400 mb-4">根据生成的覆写文件中的 provider 数量，在 OpenClash 中设置对应的环境变量：</p>
+                        
+                        <div class="space-y-4">
+                            <div class="code-block p-4 font-mono text-sm">
+                                <div class="flex items-center justify-between mb-2 text-xs text-gray-500 border-b border-gray-700 pb-2">
+                                    <span>单 Provider 配置</span>
+                                    <span class="text-green-400">1 个订阅</span>
+                                </div>
+                                <div class="text-gray-300">
+                                    EN_KEY=<span class="text-green-400">https://your-subscription-url</span>
+                                </div>
+                            </div>
+
+                            <div class="code-block p-4 font-mono text-sm">
+                                <div class="flex items-center justify-between mb-2 text-xs text-gray-500 border-b border-gray-700 pb-2">
+                                    <span>多 Provider 配置</span>
+                                    <span class="text-blue-400">2+ 个订阅</span>
+                                </div>
+                                <div class="text-gray-300 space-y-1">
+                                    <div>EN_KEY1=<span class="text-green-400">https://sub1-url</span></div>
+                                    <div>EN_KEY2=<span class="text-green-400">https://sub2-url</span></div>
+                                    <div>EN_KEY3=<span class="text-green-400">https://sub3-url</span></div>
+                                </div>
+                            </div>
+
+                            <div class="code-block p-4 font-mono text-sm border border-orange-500/30">
+                                <div class="flex items-center justify-between mb-2 text-xs text-gray-500 border-b border-gray-700 pb-2">
+                                    <span>旁路由额外变量</span>
+                                    <span class="text-orange-400">必需</span>
+                                </div>
+                                <div class="text-gray-300">
+                                    EN_DNS=<span class="text-orange-400">223.5.5.5,114.114.114.114</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass rounded-xl p-8 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full -mr-16 -mt-16"></div>
+                    <div class="relative z-10">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center font-bold text-lg">3</div>
+                            <h3 class="text-xl font-semibold">应用覆写</h3>
+                        </div>
+                        <ol class="list-decimal list-inside space-y-2 text-gray-400">
+                            <li>在 OpenClash 的<strong>覆写设置</strong>中上传 .conf 文件</li>
+                            <li>或订阅 <code class="bg-dark-light px-2 py-0.5 rounded text-xs">overwrite/xxx.conf</code> 的 Raw URL</li>
+                            <li>在<strong>全局设置</strong>中填入上述环境变量</li>
+                            <li>保存并重启 OpenClash</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Naming Convention -->
+    <section class="py-20 bg-dark-light/30">
+        <div class="container mx-auto px-6">
+            <h2 class="text-3xl font-bold text-center mb-12">文件命名规则</h2>
+            
+            <div class="max-w-4xl mx-auto overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-gray-700">
+                            <th class="pb-4 text-gray-400 font-semibold">文件名模式</th>
+                            <th class="pb-4 text-gray-400 font-semibold">来源</th>
+                            <th class="pb-4 text-gray-400 font-semibold">模式</th>
+                            <th class="pb-4 text-gray-400 font-semibold">Provider变量</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                        <tr class="group hover:bg-white/5 transition-colors">
+                            <td class="py-4 font-mono text-sm text-blue-400">Overwrite-external-xxx-main.conf</td>
+                            <td class="py-4 text-gray-300">HenryChiao 仓库</td>
+                            <td class="py-4"><span class="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs">主路由</span></td>
+                            <td class="py-4 font-mono text-sm text-gray-400">EN_KEY / EN_KEY1-N</td>
+                        </tr>
+                        <tr class="group hover:bg-white/5 transition-colors">
+                            <td class="py-4 font-mono text-sm text-orange-400">Overwrite-external-xxx-bypass.conf</td>
+                            <td class="py-4 text-gray-300">HenryChiao 仓库</td>
+                            <td class="py-4"><span class="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs">旁路由</span></td>
+                            <td class="py-4 font-mono text-sm text-gray-400">EN_KEY+EN_DNS</td>
+                        </tr>
+                        <tr class="group hover:bg-white/5 transition-colors">
+                            <td class="py-4 font-mono text-sm text-purple-400">Overwrite-external-xxx-smart.conf</td>
+                            <td class="py-4 text-gray-300">HenryChiao 仓库</td>
+                            <td class="py-4"><span class="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs">Smart</span></td>
+                            <td class="py-4 font-mono text-sm text-gray-400">EN_KEY / EN_KEY1-N</td>
+                        </tr>
+                        <tr class="group hover:bg-white/5 transition-colors">
+                            <td class="py-4 font-mono text-sm text-green-400">Overwrite-local-xxx-main.conf</td>
+                            <td class="py-4 text-gray-300">cleaner_config/</td>
+                            <td class="py-4"><span class="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs">主路由</span></td>
+                            <td class="py-4 font-mono text-sm text-gray-400">视配置而定</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="py-12 border-t border-gray-800">
+        <div class="container mx-auto px-6 text-center">
+            <div class="flex justify-center gap-6 mb-8">
+                <a href="https://github.com/vernesong/OpenClash" target="_blank" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-external-link-alt mr-2"></i>OpenClash
+                </a>
+                <a href="https://github.com/HenryChiao/mihomo_yamls" target="_blank" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-external-link-alt mr-2"></i>mihomo_yamls
+                </a>
+                <a href="https://wiki.metacubex.one/" target="_blank" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-book mr-2"></i>Mihomo Wiki
+                </a>
+            </div>
+            <p class="text-gray-600 text-sm">
+                基于 GPL-3.0 许可证开源 · 使用 GitHub Actions 自动构建
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+
+        // Add scroll animation observer
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('animate-slide-up');
+                    entry.target.style.opacity = '1';
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.glass, .feature-card').forEach((el) => {
+            el.style.opacity = '0';
+            observer.observe(el);
+        });
+    </script>
+</body>
+</html>
