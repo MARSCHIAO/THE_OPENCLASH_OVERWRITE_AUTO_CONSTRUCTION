@@ -1,3 +1,13 @@
+proxy-providers:
+  all-proxies:
+    type: http
+    url: https://example.com/your-subscription-url
+    interval: 3600
+    path: ./providers/all-proxies.yaml
+    health-check:
+      enable: true
+      interval: 600
+      url: http://www.gstatic.com/generate_204
 proxy-groups:
 - name: 🚀 节点选择
   type: select
@@ -732,13 +742,3 @@ rule-providers:
     url: https://testingcf.jsdelivr.net/gh/dler-io/Rules@main/Clash/Provider/miHoYo.yaml
     path: ./Rules/miHoYo
     interval: 604800
-proxy-providers:
-  all-proxies:
-    type: http
-    url: https://example.com/your-subscription-url
-    interval: 3600
-    path: ./providers/all-proxies.yaml
-    health-check:
-      enable: true
-      interval: 600
-      url: http://www.gstatic.com/generate_204
