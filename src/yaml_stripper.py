@@ -165,4 +165,10 @@ if __name__ == '__main__':
     print("=" * 60)
 
     for result in results:
-        print(f
+        print(f"\n📄 {result['filename']}")
+        print(f"   Proxy Providers: {result['counts']['proxy_providers']}")
+        print(f"   Rule Providers: {result['counts']['rule_providers']}")
+        print(f"   Proxy Groups: {result['counts']['proxy_groups']}")
+        print(f"   Rules: {result['counts']['rules']}")
+
+    print(f"\n✅ Total processed: {len(results)} files")
