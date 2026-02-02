@@ -3,7 +3,7 @@ name: Build OpenClash Overwrites
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 6 * * *'  # 每天早6点自动更新
   push:
     branches: [main]
     paths:
@@ -51,18 +51,18 @@ jobs:
             echo "✅ Smart_Mode copied"
           fi
           
-          find raw_configs/external -name "*.yaml" | wc -l
-          echo "files found"
+          count=$(find raw_configs/external -name "*.yaml" | wc -l)
+          echo "📊 Found $count external YAML files"
 
       - name: Copy Local Configs
         run: |
           echo "📂 Copying local configs..."
           mkdir -p raw_configs/local
-          if [ -d "cleaner_config" ] && [ "$(ls -A cleaner_config)" ]; then
+          if [ -d "cleaner_config" ] && [ "$(ls -A cleaner_config 2>/dev/null)" ]; then
             cp -r cleaner_config/* raw_configs/local/
             echo "✅ Local configs copied"
           else
-            echo "ℹ️ No local configs found"
+            echo "ℹ️ No local configs found, skipping..."
           fi
 
       - name: Process YAML configs
@@ -70,15 +70,8 @@ jobs:
           echo "🔧 Processing YAML configs..."
           mkdir -p processed_configs/external processed_configs/local
           
-          # 检查Python脚本是否存在
-          if [ ! -f "src/yaml_processor.py" ]; then
-            echo "❌ Error: src/yaml_processor.py not found!"
-            ls -la src/
-            exit 1
-          fi
-          
           # 处理外部配置
-          if [ -d "raw_configs/external" ]; then
+          if [ -d "raw_configs/external" ] && [ "$(find raw_configs/external -name '*.yaml' | wc -l)" -gt 0 ]; then
             python src/yaml_processor.py \
               --input raw_configs/external \
               --output processed_configs/external \
@@ -87,7 +80,7 @@ jobs:
           fi
           
           # 处理本地配置
-          if [ -d "raw_configs/local" ] && [ "$(ls -A raw_configs/local)" ]; then
+          if [ -d "raw_configs/local" ] && [ "$(find raw_configs/local -name '*.yaml' | wc -l)" -gt 0 ]; then
             python src/yaml_processor.py \
               --input raw_configs/local \
               --output processed_configs/local \
@@ -98,87 +91,108 @@ jobs:
       - name: Generate Overwrite Files
         run: |
           echo "📝 Generating overwrite files..."
-          mkdir -p output/overwrites
+          mkdir -p overwrite
           
           REPO_URL="https://raw.githubusercontent.com/${{ github.repository }}/main"
           
-          # 检查脚本
-          if [ ! -f "src/overwrite_generator.py" ]; then
-            echo "❌ Error: src/overwrite_generator.py not found!"
-            exit 1
-          fi
-          
-          # 生成外部覆写
+          # 生成外部配置覆写
           if [ -d "processed_configs/external" ]; then
+            echo "Generating external overwrites..."
             python src/overwrite_generator.py \
               --input processed_configs/external \
-              --output output/overwrites \
+              --output overwrite \
               --types main bypass smart \
               --repo-url "$REPO_URL" \
               --source external \
-              --verbose || echo "Warning: External generation had issues"
+              --verbose
           fi
           
-          # 生成本地覆写
+          # 生成本地配置覆写
           if [ -d "processed_configs/local" ] && [ "$(find processed_configs/local -name '*.yaml' | wc -l)" -gt 0 ]; then
+            echo "Generating local overwrites..."
             python src/overwrite_generator.py \
               --input processed_configs/local \
-              --output output/overwrites \
+              --output overwrite \
               --types main bypass smart \
               --repo-url "$REPO_URL" \
               --source local \
-              --verbose || echo "Warning: Local generation had issues"
+              --verbose
           fi
           
           echo "✅ Generated files:"
-          ls -la output/overwrites/ || echo "No files generated"
+          ls -la overwrite/
 
-      - name: Generate checksums
+      - name: Generate README for overwrite directory
         run: |
-          cd output/overwrites
-          if ls *.conf >/dev/null 2>&1; then
-            sha256sum *.conf > SHA256SUMS
-            echo "✅ Checksums generated"
-          else
-            echo "⚠️ No .conf files found"
-            touch SHA256SUMS
-          fi
-          cd ../..
+          cat > overwrite/README.md << 'EOF'
+          # OpenClash 覆写配置文件
+          
+          本目录包含自动生成的 OpenClash 覆写配置文件。
+          
+          ## 文件命名规则
+          - `Overwrite-external-*`: 来自外部仓库(HenryChiao/mihomo_yamls)的配置
+          - `Overwrite-local-*`: 来自本仓库 cleaner_config/ 目录的本地配置
+          - `-main.conf`: 主路由标准模式(Url-test)
+          - `-bypass.conf`: 旁路由模式(需设置 EN_DNS)
+          - `-smart.conf`: Smart智能模式
+          
+          ## 使用方法
+          
+          1. **下载覆写文件**: 直接点击需要的 `.conf` 文件，点击右上角 "Raw" 获取原始链接
+          2. **在 OpenClash 中使用**:
+             - 进入 OpenClash 插件设置
+             - 找到 "覆写设置" -> "自定义覆写"
+             - 粘贴文件 URL 或上传文件
+          3. **设置环境变量**:
+             - 单订阅: `EN_KEY=https://your-sub-url`
+             - 多订阅: `EN_KEY1=https://sub1`, `EN_KEY2=https://sub2`...
+             - 旁路由模式额外需要: `EN_DNS=223.5.5.5`
+          
+          ## 自动更新
+          
+          本目录文件每天自动从上游同步并重新生成，如需修改请编辑:
+          - 外部配置: 向 [HenryChiao/mihomo_yamls](https://github.com/HenryChiao/mihomo_yamls) 提交 PR
+          - 本地配置: 修改本仓库的 `cleaner_config/` 目录
+          
+          EOF
+          
+          echo "✅ README generated"
 
-      - name: Commit changes
+      - name: Commit and Push Changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          git add processed_configs/ output/ -f
+          # 添加所有生成的文件
+          git add processed_configs/ overwrite/ -f
           
+          # 检查是否有变更
           if git diff --staged --quiet; then
             echo "ℹ️ No changes to commit"
           else
-            git commit -m "🤖 Auto-build: $(date +'%Y-%m-%d %H:%M:%S')"
+            git commit -m "🤖 Auto-build: $(date +'%Y-%m-%d %H:%M:%S')
+            
+            - Sync external configs from HenryChiao/mihomo_yamls
+            - Process local configs from cleaner_config/
+            - Generate overwrite files"
             git push
-            echo "✅ Changes pushed"
+            echo "✅ Changes pushed to repository"
           fi
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        if: github.event_name != 'pull_request'
-        with:
-          tag_name: release-$(date +'%Y%m%d-%H%M%S')
-          name: OpenClash Overwrites $(date +'%Y-%m-%d')
-          body: |
-            ## 📦 自动生成的 OpenClash 覆写配置
-            
-            ### 包含内容
-            - 精简后的 YAML 配置文件
-            - 三种模式的覆写文件（主路由/旁路由/Smart）
-            
-            ### 使用方法
-            1. 下载对应的 `.conf` 文件
-            2. 在 OpenClash 中上传覆写文件
-            3. 设置环境变量（根据provider数量自动调整）
-          files: |
-            output/overwrites/*.conf
-            output/overwrites/SHA256SUMS
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -d "overwrite" ]; then
+            count=$(ls overwrite/*.conf 2>/dev/null | wc -l)
+            echo "- ✅ Generated $count overwrite files" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Generated Files:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            ls -1 overwrite/*.conf 2>/dev/null | head -20 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⚠️ No files generated" >> $GITHUB_STEP_SUMMARY
+          fi
