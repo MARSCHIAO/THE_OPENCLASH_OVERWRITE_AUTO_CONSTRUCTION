@@ -1,7 +1,7 @@
 
 <div align="center">
 
-<h1>OpenClash Config Builder</h1>
+<h1>THE_OPENCLASH_OVERWRITE_AUTO_CONSTRUCTION</h1>
 
 <p>
   <b>自动化覆写配置生成器</b><br>
