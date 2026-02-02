@@ -1,0 +1,139 @@
+name: Build OpenClash Configs
+
+on:
+  # 定时触发 - 每天凌晨2点 (UTC)
+  schedule:
+    - cron: '0 2 * * *'
+  
+  # 手动触发
+  workflow_dispatch:
+  
+  # 代码推送触发
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'templates/**'
+      - 'config.yaml'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Sync upstream configs
+        run: |
+          python src/config_generator.py --sync
+      
+      - name: Generate config files
+        run: |
+          python src/config_generator.py --type all
+      
+      - name: Generate file checksums
+        run: |
+          cd output
+          sha256sum *.conf > SHA256SUMS
+          cd ..
+      
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.date.outputs.date }}
+          release_name: Release ${{ steps.date.outputs.date }}
+          body: |
+            ## OpenClash 覆写配置文件
+            
+            自动生成于: ${{ steps.date.outputs.date }}
+            
+            ### 📦 包含的配置文件
+            
+            - `Overwrite-main.conf` - 主路由 Url-test 模式
+            - `Overwrite-main-noipv6.conf` - 主路由无IPv6 Url-test
+            - `Overwrite-main-smart.conf` - 主路由 Smart 智能模式  
+            - `Overwrite-main-smart-lgbm.conf` - 主路由 Smart-LGBM 模式
+            - `Overwrite-bypass.conf` - 旁路由 Url-test 模式
+            - `Overwrite-bypass-smart.conf` - 旁路由 Smart 模式
+            
+            ### 🚀 使用方法
+            
+            1. 复制对应配置文件的 Raw 链接
+            2. 在 OpenClash 中添加覆写模块
+            3. 设置环境变量: `EN_KEY=你的机场订阅链接`
+            4. 旁路由用户额外设置: `EN_DNS=你的DNS服务器`
+            
+            ### 📝 更新日志
+            
+            - 自动同步上游配置源
+            - 生成所有类型的覆写配置
+            - 校验文件完整性
+            
+            ### 🔗 相关链接
+            
+            - [项目文档](https://github.com/${{ github.repository }})
+            - [使用教程](https://github.com/${{ github.repository }}/blob/main/README.md)
+            
+          draft: false
+          prerelease: false
+      
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./output/Overwrite-main.conf
+          asset_name: Overwrite-main.conf
+          asset_content_type: text/plain
+      
+      - name: Upload more assets
+        run: |
+          for file in output/*.conf; do
+            filename=$(basename "$file")
+            echo "Uploading $filename..."
+            
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: text/plain" \
+              --data-binary @"$file" \
+              "${{ steps.create_release.outputs.upload_url }}?name=$filename"
+          done
+      
+      - name: Upload checksums
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./output/SHA256SUMS
+          asset_name: SHA256SUMS
+          asset_content_type: text/plain
+      
+      - name: Commit generated files
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add output/
+          git commit -m "🤖 Auto-generated configs - ${{ steps.date.outputs.date }}" || echo "No changes to commit"
+          git push
